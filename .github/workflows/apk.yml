@@ -1,0 +1,57 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check input files
+        run: |
+          test -f geogebra-ar.zip || { echo "::error::لم يُعثر على geogebra-ar.zip في جذر المستودع"; exit 1; }
+          test -f geogebra-android.zip || { echo "::error::لم يُعثر على geogebra-android.zip في جذر المستودع"; exit 1; }
+
+      - name: Prepare Android project
+        run: |
+          rm -rf web android
+          mkdir web android
+          unzip -q geogebra-ar.zip -d web
+          unzip -q geogebra-android.zip -d android
+          test -f web/index.html || { echo "::error::index.html غير موجود داخل geogebra-ar.zip"; exit 1; }
+          mkdir -p android/app/src/main/assets android/app/src/main/res/mipmap-xxxhdpi
+          cp web/index.html android/app/src/main/assets/index.html
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq librsvg2-bin
+          rsvg-convert -w 192 -h 192 web/icon.svg -o android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Install Android SDK components
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Build debug APK
+        working-directory: android
+        run: gradle assembleDebug --no-daemon
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: geogebra-ar-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
